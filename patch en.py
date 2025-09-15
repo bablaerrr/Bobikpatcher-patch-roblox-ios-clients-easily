@@ -1,4 +1,6 @@
 print("[INFO] Welcome to bobikpatcher - please select the IPA for the patch")
+
+
 import zipfile
 import os
 import shutil
@@ -7,10 +9,16 @@ import plistlib
 import random
 from tkinter import Tk, filedialog, simpledialog, messagebox
 
+# Словарь версий → год
 version_year_map = {
 "1.0": 2011,
+    "1.0.0": 2014,
+    "1.0.1": 2014,
+    "1.0.2": 2014,
+    "1.0.3": 2014,
     "1.1.0": 2011,
     "1.1.1": 2011,
+    "2.1.1": 2012,
     "2.1.2": 2012,
     "2.2.2": 2012,
     "2.3.1": 2012,
@@ -39,6 +47,13 @@ version_year_map = {
     "2.116.36845": 2013,
     "2.117.37190": 2013,
     "2.118.37236": 2013,
+    "1.139.43843": 2014,
+    "1.140.44071": 2014,
+    "1.141.44305": 2014,
+    "1.142.44504": 2014,
+    "1.144.45017": 2014,
+    "1.149.46203": 2014,
+    "1.150.46522": 2014,
     "2.120.37929": 2013,
     "2.121.38159": 2013,
     "2.121.38265": 2013,
@@ -63,11 +78,26 @@ version_year_map = {
     "2.140.44071": 2014,
     "2.141.44305": 2014,
     "2.142.44504": 2014,
+    "1.132.41688": 2014,
+    "1.133.41966": 2014,
+    "1.151.46786": 2014,
+    "1.153.47177": 2014,
+    "1.154.47383": 2014,
+    "1.156.48019": 2014,
+    "1.157.48223": 2014,
+    "1.159.48929": 2014,
+    "1.160.49418": 2014,
     "2.143.44717": 2014,
     "2.144.45017": 2014,
     "2.145.45304": 2014,
     "2.147.45744": 2014,
     "2.148.45925": 2014,
+    "1.132.41496": 2013,
+    "1.134.42247": 2014,
+    "1.135.42578": 2014,
+    "1.136.43170": 2014,
+    "1.137.43501": 2014,
+    "1.138.43666": 2014,
     "2.149.46203": 2014,
     "2.150.46522": 2014,
     "2.151.46786": 2014,
@@ -500,22 +530,65 @@ version_year_map = {
     "2.673.712": 2025,
     "2.674.782": 2025,
     "2.675.715": 2025,
-    "2.677.762": 2025
+    "2.677.762": 2025,
+    "2.637.728": 2024,
+    "2.664.718": 2025,
+    "2.665.686": 2025,
+    "2.675.724": 2025,
+    "2.676.534": 2025,
+    "2.677.766": 2025,
+    "2.678.750": 2025,
+    "2.679.761": 2025,
+    "2.682.536": 2025,
+    "2.685.797": 2025,
+    "2.686.866": 2025,
+    "2.687.815": 2025,
+    "2.688.861": 2025,
+    "2.685.802": 2025
 }
+
+
+def find_year(version, version_year_map):
+    if version in version_year_map:
+        return version_year_map[version]
+
+    parts = version.split(".")
+    while len(parts) > 1 and parts[-1] == "0":
+        parts.pop()
+    normalized = ".".join(parts)
+    if normalized in version_year_map:
+        return version_year_map[normalized]
+
+    for key in version_year_map:
+        if key.startswith(normalized):
+            return version_year_map[key]
+
+    return "Unknown"
+
 def patch_bytes(file_path, replacement_map):
     try:
         with open(file_path, 'rb') as f:
             data = f.read()
         modified = False
+
         for original, replacement in replacement_map.items():
-            orig_bytes = original.encode()
+            orig_bytes = original.encode('utf-8', errors='ignore')
+            repl_bytes = replacement.encode('utf-8', errors='ignore')
+
+            if len(repl_bytes) < len(orig_bytes):
+                repl_bytes = repl_bytes.ljust(len(orig_bytes), b'\x00')
+            elif len(repl_bytes) > len(orig_bytes):
+                repl_bytes = repl_bytes[:len(orig_bytes)]
+
             if orig_bytes in data:
-                padded = replacement.ljust(len(original), '\x00').encode()
-                data = data.replace(orig_bytes, padded)
+                data = data.replace(orig_bytes, repl_bytes)
                 modified = True
+
         if modified:
             with open(file_path, 'wb') as f:
                 f.write(data)
+            print(f"[INFO] Patched {os.path.basename(file_path)}")
+
     except Exception as e:
         print(f"[ERROR] Failed to patch {os.path.basename(file_path)}: {e}")
 
@@ -523,80 +596,12 @@ def get_version(plist_path):
     try:
         with open(plist_path, 'rb') as f:
             plist = plistlib.load(f)
-            return plist.get("CFBundleShortVersionString", "Unknown")
+            version = plist.get("CFBundleShortVersionString") or plist.get("CFBundleVersion", "Unknown")
+            return version
     except:
         return "Unknown"
 
-def main():
-    Tk().withdraw()
-
-    ipa_path = filedialog.askopenfilename(
-        title="Select an .ipa file",
-        filetypes=[("IPA file", "*.ipa")]
-    )
-    if not ipa_path:
-        return
-
-    temp_dir = tempfile.mkdtemp()
-    with zipfile.ZipFile(ipa_path, 'r') as zip_ref:
-        zip_ref.extractall(temp_dir)
-
-    payload_path = os.path.join(temp_dir, "Payload")
-    app_dir = next((os.path.join(payload_path, d) for d in os.listdir(payload_path) if d.endswith(".app")), None)
-    if not app_dir:
-        messagebox.showerror("Error", ".app folder not found.")
-        shutil.rmtree(temp_dir)
-        return
-
-    plist_path = os.path.join(app_dir, "Info.plist")
-    short_version = get_version(plist_path)
-    app_year = version_year_map.get(short_version, "Unknown")
-
-    print(f"[INFO] Version: {short_version} → Year: {app_year}")
-    print("[INFO] Preparing domain substitutions...")
-
-    roblox_host = simpledialog.askstring("roblox.com", "Enter replacement for roblox.com (10 characters):")
-    if not roblox_host or len(roblox_host) != 10:
-        messagebox.showerror("Error", "roblox.com must be exactly 10 characters.")
-        shutil.rmtree(temp_dir)
-        return
-
-    labs_host = None
-    rbxcdn_host = None
-
-    if isinstance(app_year, int):
-        if app_year <= 2019:
-            labs_input = simpledialog.askstring(
-                "robloxlabs.com",
-                "Enter replacement for robloxlabs.com:\n• 10 chars → adds sus.\n• 14 chars → full replace\n• Empty → skip"
-            )
-            if labs_input:
-                if len(labs_input) == 10:
-                    labs_host = "sus." + labs_input
-                elif len(labs_input) == 14:
-                    labs_host = labs_input
-                else:
-                    messagebox.showerror("Error", "robloxlabs.com must be 10 or 14 characters.")
-                    shutil.rmtree(temp_dir)
-                    return
-
-        if app_year >= 2019:
-            rbxcdn_input = simpledialog.askstring("rbxcdn.com", "Enter replacement for rbxcdn.com (10 characters):")
-            if not rbxcdn_input or len(rbxcdn_input) != 10:
-                messagebox.showerror("Error", "rbxcdn.com must be exactly 10 characters.")
-                shutil.rmtree(temp_dir)
-                return
-            rbxcdn_host = rbxcdn_input
-
-    # DisplayName and BundleID customization
-    display_name = simpledialog.askstring("Display Name", "Enter new app display name (or leave blank):")
-    bundle_id = simpledialog.askstring("Bundle Identifier", "Enter new bundle identifier (or leave blank to auto-generate):")
-    if bundle_id == "":
-        base = "com.roblox.robloxmobile"
-        suffix = "".join(random.choices("0123456789", k=5))
-        bundle_id = base + suffix
-
-    # Update Info.plist
+def patch_info_plist(plist_path, display_name=None, bundle_id=None):
     try:
         with open(plist_path, 'rb') as f:
             plist = plistlib.load(f)
@@ -609,40 +614,139 @@ def main():
         with open(plist_path, 'wb') as f:
             plistlib.dump(plist, f)
 
-        print(f"[INFO] Updated Info.plist → DisplayName = {display_name or 'unchanged'}, Identifier = {bundle_id}")
+        print(f"[INFO] Info.plist patched: DisplayName={display_name}, BundleID={bundle_id}")
+        return True
     except Exception as e:
-        print(f"[ERROR] Failed to update Info.plist: {e}")
-        shutil.rmtree(temp_dir)
+        print(f"[ERROR] Failed to patch Info.plist: {e}")
+        return False
+
+# -------------------------------------------
+# Основной код
+# -------------------------------------------
+
+def main():
+    Tk().withdraw()  # Скрыть главное окно Tk
+
+    # Выбор IPA
+    ipa_path = filedialog.askopenfilename(title="Select an .ipa file", filetypes=[("IPA file", "*.ipa")])
+    if not ipa_path:
         return
 
-    domains = {"roblox.com": roblox_host}
-    if labs_host:
-        domains["robloxlabs.com"] = labs_host
-    if rbxcdn_host:
-        domains["rbxcdn.com"] = rbxcdn_host
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Распаковка IPA
+        with zipfile.ZipFile(ipa_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
 
-    print("[INFO] Patching files...")
-    targets = [
-        os.path.join(app_dir, "Roblox"),
-        os.path.join(app_dir, "Info.plist"),
-        os.path.join(app_dir, "Frameworks", "RobloxLib.framework", "RobloxLib")
-    ]
-    for path in targets:
-        if os.path.isfile(path):
-            patch_bytes(path, domains)
+        payload_path = os.path.join(temp_dir, "Payload")
+        app_dir = next((os.path.join(payload_path, d) for d in os.listdir(payload_path) if d.endswith(".app")), None)
+        if not app_dir:
+            messagebox.showerror("Error", ".app folder not found.")
+            return
 
-    app_name = os.path.basename(app_dir).replace(".app", "")
-    out_name = ipa_path.replace(".ipa", f"_{app_name}_{app_year}_patched.ipa")
-    with zipfile.ZipFile(out_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(temp_dir):
-            for file in files:
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, temp_dir)
-                zipf.write(full_path, rel_path)
+        plist_path = os.path.join(app_dir, "Info.plist")
+        short_version = get_version(plist_path)
+        app_year = find_year(short_version, version_year_map)
+        print(f"[INFO] Version: {short_version} → Year: {app_year}")
 
-    shutil.rmtree(temp_dir)
-    print(f"[DONE] Saved as:\n{out_name}")
-    messagebox.showinfo("Done", f"Patching complete!\nVersion: {short_version}\nYear: {app_year}\nFile:\n{out_name}")
+        # -------------------------------
+        # Ввод новых доменов
+        # -------------------------------
+        roblox_host = simpledialog.askstring("roblox.com", "Enter replacement for roblox.com (10 chars):")
+        if not roblox_host or len(roblox_host) != 10:
+            messagebox.showerror("Error", "roblox.com must be exactly 10 characters.")
+            return
+
+        labs_host = None
+        rbxcdn_host = None
+
+        if isinstance(app_year, int):
+            if app_year <= 2019:
+                labs_input = simpledialog.askstring(
+                    "robloxlabs.com",
+                    "Enter replacement for robloxlabs.com:\n• 10 chars → adds sus.\n• 14 chars → full replace\n• Empty → skip"
+                )
+                if labs_input:
+                    if len(labs_input) == 10:
+                        labs_host = "sus." + labs_input
+                    elif len(labs_input) == 14:
+                        labs_host = labs_input
+                    else:
+                        messagebox.showerror("Error", "robloxlabs.com must be 10 or 14 characters.")
+                        return
+
+            if app_year >= 2019:
+                rbxcdn_input = simpledialog.askstring("rbxcdn.com", "Enter replacement for rbxcdn.com (10 characters) (if you don't know what it is just insert the same as for roblox.com link):")
+                if not rbxcdn_input or len(rbxcdn_input) != 10:
+                    messagebox.showerror("Error", "rbxcdn.com must be exactly 10 characters.")
+                    return
+                rbxcdn_host = rbxcdn_input
+
+        # -------------------------------
+        # Display Name и Bundle ID
+        # -------------------------------
+        display_name = simpledialog.askstring("Display Name", "Enter new app display name (or leave blank):")
+        bundle_id = simpledialog.askstring("Bundle Identifier", "Enter new bundle identifier (or leave blank to auto-generate):")
+
+        if not bundle_id:
+            with open(plist_path, 'rb') as f:
+                plist = plistlib.load(f)
+                old_bundle_id = plist.get("CFBundleIdentifier", "com.unknown.app")
+
+            suffix = "".join(random.choices("0123456789", k=5))
+            bundle_id = old_bundle_id + "." + suffix
+
+        # Патчим Info.plist
+        if not patch_info_plist(plist_path, display_name, bundle_id):
+            messagebox.showerror("Error", "Failed to patch Info.plist.")
+            return
+
+        # -------------------------------
+        # Патч бинарников
+        # -------------------------------
+        domains = {"roblox.com": roblox_host}
+        if labs_host:
+            domains["robloxlabs.com"] = labs_host
+        if rbxcdn_host:
+            domains["rbxcdn.com"] = rbxcdn_host
+
+        print("[INFO] Patching files...")
+        targets = [plist_path]
+
+        possible_binaries = [
+            "Roblox", "ROBLOX_Mobile", "ROBLOX", "robloxmobile",
+            "Survive the Disasters", "RobloxMobile Internal", "Roblox Developer",
+            "Hang Out in a Disco and Chat", "Space Knights"
+        ]
+        for name in possible_binaries:
+            bin_path = os.path.join(app_dir, name)
+            if os.path.isfile(bin_path):
+                targets.append(bin_path)
+
+        robloxlib_path = os.path.join(app_dir, "Frameworks", "RobloxLib.framework", "RobloxLib")
+        if os.path.isfile(robloxlib_path):
+            targets.append(robloxlib_path)
+
+        for path in targets:
+            if os.path.isfile(path):
+                patch_bytes(path, domains)
+
+        # -------------------------------
+        # Архивация обратно в IPA
+        # -------------------------------
+        app_name = os.path.basename(app_dir).replace(".app", "")
+        out_name = ipa_path.replace(".ipa", f"_{app_name}_{app_year}_patched.ipa")
+        with zipfile.ZipFile(out_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, _, files in os.walk(temp_dir):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, temp_dir)
+                    zipf.write(full_path, rel_path)
+
+        print(f"[DONE] Saved as:\n{out_name}")
+
+    finally:
+        shutil.rmtree(temp_dir)
 
 if __name__ == "__main__":
     main()
